@@ -2,7 +2,7 @@ import fitz  # PyMuPDF
 from PIL import Image
 import io, re
 import pandas as pd
-from pdf_toc_utils import extract_toc
+from pdf_toc_utils import extract_toc, get_chapter_for_page
 
 file = 'qrl.pdf'
 atlas = 'atlas.pdf'
@@ -28,8 +28,8 @@ def extract_images_labels(file_path: str, export_path: str, page_start: int = 0,
     chapters_dict = extract_toc(file_path, start, end)
     
     for page_index in range(end):
-        
         if page_index < start: continue
+        
         page = pdf_file.load_page(page_index)
         image_list = page.get_images(full=True)
         
@@ -43,15 +43,16 @@ def extract_images_labels(file_path: str, export_path: str, page_start: int = 0,
             image_ext = base_image["ext"]
             
             # Get the chapter the image is under so that we name them better
-            
+            image_chapter = get_chapter_for_page(page_index, chapters_dict)
 
-            # save the image
-            image_name = f"{export_path}/image{page_index+1}_{image_index}.{image_ext}"
+            # Save the image
+            image_name = f"{export_path}/images/{image_chapter}/{image_index}.{image_ext}"
             all_images.append(image_name)
             # with open(image_name, "wb") as image_file:
             #     image_file.write(image_bytes)
             #     # print(f"[+] Image saved as {image_name}")
         
+
 
 
 
@@ -64,3 +65,7 @@ def extract_images_labels(file_path: str, export_path: str, page_start: int = 0,
 if __name__ == '__main__':
     # extract_images_labels(file, export_path, 0, 100)
     result = extract_toc(atlas, 0, 10)
+    chapter = get_chapter_for_page(123, result)
+    print(chapter)
+            
+    

@@ -4,6 +4,34 @@ import io, re
 import pandas as pd
 
 
+def extract_toc(file_path: str, start: int=0, end: int=20):
+    '''
+    Extract the Table of Contents including chapter title and starting page
+    Args:
+        file_path (str): Local path of the file we want to extract the Table of Contents information
+        start (int): Page to start the extraction of the images
+        end (int): Page to end the extraction of the images
+    '''
+    pdf_file = fitz.open(file_path)
+    toc_text = ""
+
+    for page_index in range(start, end):
+        page = pdf_file.load_page(page_index)
+        text = page.get_text() # type: ignore
+        if 'Table of Contents' in text:
+            toc_text += text
+        elif toc_text:
+            toc_text += "\n" + text
+            if 'Index' in text:
+                break
+
+    normalized = normalize_toc_text(toc_text)
+    chapters = extract_chapters_from_toc(normalized)
+    chapters_dict = {key: value for key, value in chapters}
+    result_dict = {key.replace(' ', '_').replace('-', '_').lower(): value for key, value in chapters_dict.items()}
+    return result_dict
+
+
 def normalize_toc_text(raw_text: str):
     '''
     Joins lines that are part of the same ToC entry into a single line.
@@ -52,21 +80,21 @@ def extract_chapters_from_toc(text: str):
     return chapters
 
 
-def extract_toc(file_path, start=0, end=20):
-    pdf_file = fitz.open(file_path)
-    toc_text = ""
 
-    for page_index in range(start, end):
-        page = pdf_file.load_page(page_index)
-        text = page.get_text() # type: ignore
-        if 'Table of Contents' in text:
-            toc_text += text
-        elif toc_text:
-            toc_text += "\n" + text
-            if 'Index' in text:
-                break
-
-    normalized = normalize_toc_text(toc_text)
-    chapters = extract_chapters_from_toc(normalized)
-    result = {key: value for key, value in chapters}
-    return result
+def get_chapter_for_page(page_num, chapter_dict):
+    '''
+    Gets the chapter that the image belongs to based on the page we find the image
+    Args:
+        page_num (int): Page number that the image is located at
+        chapter_dict (dict): The chapters dictionary that includes the chapters titles and starting page
+    '''
+    # Convert to list of tuples and sort by starting page
+    sorted_chapters = sorted(chapter_dict.items(), key=lambda x: x[1])
+    
+    current_chapter = None
+    for title, start_page in sorted_chapters:
+        if page_num >= start_page:
+            current_chapter = title
+        else:
+            break
+    return current_chapter
