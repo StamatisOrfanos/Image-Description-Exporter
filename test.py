@@ -1,11 +1,6 @@
-import fitz  # PyMuPDF
-from PIL import Image
-import io, re, os
-import pandas as pd
-from pdf_toc_utils import extract_toc, get_chapter_for_page
+import os
 
-atlas = 'mini_atlas.pdf'
-export_path = '/Users/stamatiosorphanos/Desktop/Image-Description-Exporter/data'
+import fitz
 
 
 def extract_images_labels(file_path: str, export_path: str, page_start: int = 0, page_end: int = None): # type: ignore
@@ -21,19 +16,17 @@ def extract_images_labels(file_path: str, export_path: str, page_start: int = 0,
     os.makedirs(export_path, exist_ok=True)
     
     # Read document and provide the range of pages to process 
+    all_images = []
     pdf_file = fitz.open(file_path)
     start = 0 if page_start is None else page_start
     end   = len(pdf_file) if page_end is None else min(page_end, len(pdf_file))
     
     # Get chapters titles and pages per chapter for correct mapping of images
-    chapters_dict = extract_toc(file_path, start, end)
+    # chapters_dict = extract_toc(file_path, start, end)
     
     for page_index in range(end):
-
         if page_index < start: continue
-        
-        # Get the current page and the list of images, skip page if there are no images
-        page = pdf_file.load_page(page_index)        
+        page = pdf_file.load_page(page_index)
         image_list = page.get_images(full=True)
         if not image_list: continue
         
@@ -44,26 +37,19 @@ def extract_images_labels(file_path: str, export_path: str, page_start: int = 0,
             image_bytes = base_image['image']
             image_ext = base_image['ext']
             
-            # # Get the rectangle area around the image
+            # Get the rectangle area around the image
             # image_rect = find_image_rect_by_xref(page, xref)
             # if image_rect is None:
             #     continue
 
+
+            
             # Get the chapter the image is under so that we name them better
-            image_chapter = get_chapter_for_page(page_index, chapters_dict)
+            # image_chapter = get_chapter_for_page(page_index, chapters_dict)
 
             # Save the image
-            image_dir = f'{export_path}/images/{image_chapter}'
-            os.makedirs(image_dir, exist_ok=True)
-            
-            image_name = f'{image_dir}/{page_index}_{image_index}.{image_ext}'
-            print(f'The image_name is: {image_name}')
-
-
-
-
-if __name__ == '__main__':
-    extract_images_labels(atlas, export_path, 0, 100)
-    
-            
-    
+            # image_name = f'{export_path}/images/{image_chapter}/{image_index}.{image_ext}'
+            # all_images.append(image_name)
+            # with open(image_name, 'wb') as image_file:
+            #     image_file.write(image_bytes)
+            #     # print(f'[+] Image saved as {image_name}')
