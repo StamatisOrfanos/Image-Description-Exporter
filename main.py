@@ -1,69 +1,95 @@
 import fitz  # PyMuPDF
-from PIL import Image
-import io, re, os
-import pandas as pd
-from pdf_toc_utils import extract_toc, get_chapter_for_page
+import os
+import csv
+import re
+from pathlib import Path
+from collections import defaultdict
+import pdf_toc_utils
 
-atlas = 'mini_atlas.pdf'
-export_path = '/Users/stamatiosorphanos/Desktop/Image-Description-Exporter/data'
+SKIP_STRINGS = {'DiMaio’s Forensic Pathology', 'Medicolegal Death Investigation'}
 
 
-def extract_images_labels(file_path: str, export_path: str, page_start: int = 0, page_end: int = None): # type: ignore
-    '''
-    Create a dataset using the images and labels of a certain pdf file
-    Args:
-        file_path (str): local path to the pdf document
-        page_start (int): page number to start the process
-        page_end (int): page number to end the process
-        export_path (str): local path to export the data 
-    '''
-    # Create the export directory if it does not exist
-    os.makedirs(export_path, exist_ok=True)
-    
-    # Read document and provide the range of pages to process 
-    pdf_file = fitz.open(file_path)
-    start = 0 if page_start is None else page_start
-    end   = len(pdf_file) if page_end is None else min(page_end, len(pdf_file))
-    
-    # Get chapters titles and pages per chapter for correct mapping of images
-    chapters_dict = extract_toc(file_path, start, end)
-    
-    for page_index in range(end):
+def sanitize_for_path(text):
+    # Replace problematic characters for file/folder names
+    if not isinstance(text, str) or not text:
+        return 'unknown'
+    text = text.replace('"', '').replace('/', '_').replace('\\', '_').replace(':', '_')
+    return text.strip()
 
-        if page_index < start: continue
-        
-        # Get the current page and the list of images, skip page if there are no images
-        page = pdf_file.load_page(page_index)        
-        image_list = page.get_images(full=True)
-        if not image_list: continue
-        
-        for image_index, img in enumerate(image_list, start=1):
-            # XREF of the image, extract the image bytes and get the image extension 
+
+def build_image_path(base_path, chapter, section, image_counter):
+    # Construct path like: base/images/chapter/section/imageX.png
+    chapter = sanitize_for_path(chapter)
+    section = sanitize_for_path(section)
+    image_filename = f'image{image_counter}.png'
+    return Path(base_path) / 'images' / chapter / section / image_filename
+
+
+def extract_multimodal_data_from_pdf_safe(pdf_path, export_base_path, toc_lines, page_start=0, page_end=None):
+    os.makedirs(export_base_path, exist_ok=True)
+    os.makedirs(os.path.join(export_base_path, 'images'), exist_ok=True)
+
+    doc = fitz.open(pdf_path)
+    start = page_start or 0
+    end = page_end if page_end is not None else len(doc)
+
+    toc_entries = pdf_toc_utils.parse_two_line_toc(toc_lines)
+    chapter_image_counter = defaultdict(int)
+    csv_output = []
+
+    for page_num in range(start, end):
+        page = doc[page_num]
+        hierarchy = pdf_toc_utils.get_hierarchy_for_page(page_num, toc_entries)
+        chapter = hierarchy.get('chapter', 'unknown')
+        section = hierarchy.get('section', 'unknown')
+
+        text_blocks = page.get_text('blocks')  # type: ignore
+        text_blocks = sorted(text_blocks, key=lambda b: b[1])  # Sort by vertical position
+
+        images = page.get_images(full=True)
+        for _, img in enumerate(images, start=1):
             xref = img[0]
-            base_image = pdf_file.extract_image(xref)
+            base_image = doc.extract_image(xref)
             image_bytes = base_image['image']
-            image_ext = base_image['ext']
-            
-            # # Get the rectangle area around the image
-            # image_rect = find_image_rect_by_xref(page, xref)
-            # if image_rect is None:
-            #     continue
+            chapter_image_counter[(chapter, section)] += 1
+            image_index = chapter_image_counter[(chapter, section)]
+            image_path = build_image_path(export_base_path, chapter, section, image_index)
+            image_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Get the chapter the image is under so that we name them better
-            image_chapter = get_chapter_for_page(page_index, chapters_dict)
+            with open(image_path, 'wb') as f:
+                f.write(image_bytes)
 
-            # Save the image
-            image_dir = f'{export_path}/images/{image_chapter}'
-            os.makedirs(image_dir, exist_ok=True)
-            
-            image_name = f'{image_dir}/{page_index}_{image_index}.{image_ext}'
-            print(f'The image_name is: {image_name}')
+            # Look for figure caption
+            caption_text = ''
+            for block in text_blocks:
+                if re.match(r'^Figure\s+\d+\.\d+', block[4]):
+                    caption_text = block[4].strip()
+                    break
+
+            csv_output.append({
+                'figure_path': str(image_path.relative_to(export_base_path)),
+                'caption_text': caption_text,
+                'chapter_title': chapter,
+                'section_title': section,
+            })
+
+    # Write CSV output
+    csv_file_path = os.path.join(export_base_path, 'captions.csv')
+    with open(csv_file_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=csv_output[0].keys())
+        writer.writeheader()
+        writer.writerows(csv_output)
+
+    return csv_file_path, len(csv_output)
 
 
-
-
+# Example usage
 if __name__ == '__main__':
-    extract_images_labels(atlas, export_path, 0, 100)
-    
-            
+    atlas = 'atlas.pdf'
+    export_path = './data'
+    toc_lines = pdf_toc_utils.extract_toc_lines(atlas)
+    example_csv, example_count = extract_multimodal_data_from_pdf_safe(pdf_path=atlas, export_base_path=export_path, toc_lines=toc_lines)
+    print(f"\n✅ Extracted {example_count} images and metadata to: {example_csv}")
+
+
     
